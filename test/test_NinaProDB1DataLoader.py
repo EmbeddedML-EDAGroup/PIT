@@ -17,4 +17,38 @@
 #* Author:  Matteo Risso <matteo.risso@polito.it>                             *
 #*----------------------------------------------------------------------------*
 
-from .TEMPONetDaliaTrainer import *
+import unittest
+from data_loader.NinaProDB1DataLoader import NinaProDB1DataLoader
+import test.preprocessing as pp
+import numpy as np
+import pdb
+
+class TestNinaProDB1DataLoader(unittest.TestCase):
+    
+    def test_trainset(self):
+        data_dir = ''
+        raise ValueError('Specify data_dir path')
+        batch_size = 128
+        set_ = ['train', 'test']
+        
+        for s in set_:
+            for i in range(1, 28):
+                data_loader = NinaProDB1DataLoader(
+                        data_dir=data_dir,
+                        batch_size=batch_size,
+                        subject=i,
+                        shuffle=True,
+                        set_ = s
+                        )
+    
+            for batch_idx, batch in enumerate(data_loader):
+                print('Dataset: {}, split: {}'.format(data_dir, s))
+                print(batch_idx)
+                print(batch['data'].size())
+                print(batch['target'].size())
+
+                if batch_idx == 2:
+                    break
+
+if __name__ == '__main__':
+    unittest.main()

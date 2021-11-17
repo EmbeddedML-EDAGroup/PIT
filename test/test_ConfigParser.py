@@ -17,4 +17,24 @@
 #* Author:  Matteo Risso <matteo.risso@polito.it>                             *
 #*----------------------------------------------------------------------------*
 
-from .TEMPONetDaliaTrainer import *
+import unittest
+from parse_config import ConfigParser
+import argparse
+import collections
+import sys
+
+class TestConfigParser(unittest.TestCase):
+    
+    args_tuple = collections.namedtuple('args', 'config resume device')
+
+    def test_object_instantiation(self):
+        
+        args = TestConfigParser.args_tuple("config.json", None, None)
+        config = ConfigParser.from_args(args)
+        
+        print(config.config)
+        import pdb
+        pdb.set_trace()
+
+if __name__ == '__main__':
+    unittest.main()

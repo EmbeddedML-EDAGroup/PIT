@@ -1,0 +1,94 @@
+{
+	"name": "ECG5000_ECGTCN",
+	"n_gpu": 1,
+
+	"arch": {
+		"type": "ECGTCN",
+		"dataset": "ECG5000",
+		"args": {
+			"input_size": 1,
+			"output_size": 5,
+			"nhid":  11,
+			"levels": 3,
+			"kernel_size": 11,
+			"dropout": 0.3,
+			"grad_clip": -1 
+		}
+	},
+	"nas": {
+		"do_nas": true,
+		"nas_config":{
+			"schedule":{
+				"channels": "same",
+				"filters": "same",
+				"dilation": "same"
+			},
+			"target":{
+				"dilation": true,
+				"filters": true,
+				"channels": true
+			},
+			"mask_type":{
+				"type": "sum",
+				"dilation": "binary",
+				"filters": "binary",
+				"channels": "binary"
+			},
+			"hysteresis":{
+				"do": false,
+				"eps": 0.0
+			},
+			"group_binarize": true,
+			"regularizer": "flops",
+			"rf_expansion_ratio": 1,
+			"granularity": 2,
+			"tau": 0.001,
+			"strength":{
+				"fixed": true,
+				"value": 5e-8
+			},	
+			"warmup_epochs": "max"
+		}
+	},
+	"data_loader": {
+		"type": "ECG5000DataLoader",
+		"args":{
+			"data_dir": "!!!SPECIFY PATH!!!",
+			"batch_size": 30,
+			"validation_split": 0.0,
+			"shuffle": true,
+			"num_workers": 4
+		}
+	},
+	"optimizer": {
+		"type": "Adam",
+		"args":{
+			"lr": 1e-3,
+			"weight_decay": 0.0,
+			"amsgrad": false
+		}
+	},
+	"loss": "nll_loss",
+	"metrics": [
+		"accuracy"
+	],
+
+	"lr_scheduler": {},
+	
+    	"trainer": {
+		"type": "ECG5000Trainer",
+		"epochs": 50,
+		"save_dir": "!!!SPECIFY PATH!!!",
+		"save_period": 5,
+		"verbosity": 2,
+		
+		"monitor": "max val_accuracy",
+		"early_stop": 10,
+
+		"tensorboard": true,
+		"cross_validation": {
+			"do": true,
+			"folds": 5
+		}
+	}
+}

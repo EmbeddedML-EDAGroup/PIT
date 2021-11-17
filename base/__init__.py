@@ -17,4 +17,6 @@
 #* Author:  Matteo Risso <matteo.risso@polito.it>                             *
 #*----------------------------------------------------------------------------*
 
-from .TEMPONetDaliaTrainer import *
+from .base_data_loader import *
+from .base_model import *
+from .base_trainer import *

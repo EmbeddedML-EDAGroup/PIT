@@ -17,4 +17,35 @@
 #* Author:  Matteo Risso <matteo.risso@polito.it>                             *
 #*----------------------------------------------------------------------------*
 
-from .TEMPONetDaliaTrainer import *
+import unittest
+from parse_config import ConfigParser
+import argparse
+import collections
+import torch
+import sys
+from NAS.PIT import PIT
+import pdb
+
+class TestPIT(unittest.TestCase):
+    
+    args_tuple = collections.namedtuple('args', 'config resume device')
+    
+    def test_pit_object(self):
+        # Pars CLI argument and config file
+        args = TestPIT.args_tuple("config/config_ECG5000.json", None, None)
+        config = ConfigParser.from_args(args)
+        
+        # PIT object instantiation
+        pit = PIT(config)
+        
+        # Test Warmup
+        pit.warmup()
+
+        # Test Search
+        pit.nas()
+
+        # Test Retrain
+        pit.retrain()
+       
+if __name__ == '__main__':
+    unittest.main()

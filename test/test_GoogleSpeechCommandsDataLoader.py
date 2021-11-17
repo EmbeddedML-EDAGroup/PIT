@@ -17,4 +17,36 @@
 #* Author:  Matteo Risso <matteo.risso@polito.it>                             *
 #*----------------------------------------------------------------------------*
 
-from .TEMPONetDaliaTrainer import *
+import unittest
+from data_loader.GoogleSpeechCommandsDataLoader import GoogleSpeechCommandsDataLoader
+import test.preprocessing as pp
+import numpy as np
+import pdb
+
+class TestGoogleSpeechCommandsDataLoader(unittest.TestCase):
+    
+    def test_trainset(self):
+        data_dir = ''
+        raise ValueError('Specify data_dir path')
+        batch_size = 100
+        set_ = ['train', 'valid','test']
+        
+        for s in set_:
+            data_loader = GoogleSpeechCommandsDataLoader(
+                    data_dir=data_dir,
+                    batch_size=batch_size,
+                    shuffle=True,
+                    set_ = s
+                    )
+    
+            for batch_idx, batch in enumerate(data_loader):
+                print('Dataset: {}, split: {}'.format(data_dir, s))
+                print(batch_idx)
+                print(batch['data'].size())
+                print(batch['target'].size())
+
+                if batch_idx == 2:
+                    break
+
+if __name__ == '__main__':
+    unittest.main()

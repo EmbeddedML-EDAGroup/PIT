@@ -1,0 +1,84 @@
+{
+	"name": "Dalia_TEMPONet",
+	"n_gpu": 1,
+
+	"arch": {
+		"type": "TEMPONet",
+		"dataset": "PPG_Dalia",
+		"args": {}
+	},
+	"nas": {
+		"do_nas": true,
+		"nas_config":{
+			"schedule":{
+				"channels": "same",
+				"dilation": "same",
+				"filters": "same"
+			},
+			"target":{
+				"dilation": true,
+				"filters": true,
+				"channels": true
+			},
+			"mask_type":{
+				"type": "sum",
+				"dilation": "binary",
+				"filters": "binary",
+				"channels": "binary"
+			},
+			"hysteresis":{
+				"do": false,
+				"eps": 0.0
+			},
+			"group_binarize": true,
+			"regularizer": "flops",
+			"rf_expansion_ratio": 2,
+			"granularity": 2,
+			"tau": 0.001,
+			"strength":{
+				"fixed": true,
+				"value": 5e-6
+			},
+			"warmup_epochs": "max"
+		}
+	},
+	"data_loader": {
+		"type": "DaliaDataLoader",
+		"args":{
+			"data_dir": "!!!SPECIFY PATH!!!",
+			"batch_size": 128,
+			"shuffle": true,
+			"validation_split": 0.1,
+			"num_workers": 4
+		}
+	},
+	"optimizer": {
+		"type": "Adam",
+		"args":{
+			"lr": 0.001,
+			"weight_decay": 0,
+			"amsgrad": false
+		}
+	},
+	"loss": "logcosh",
+	"metrics": [
+		"MAE"
+	],
+	"trainer": {
+		"type": "TEMPONetDaliaTrainer",
+		"epochs": 500,
+
+		"save_dir": "!!!SPECIFY PATH!!!",
+		"save_period": 10,
+		"verbosity": 2,
+		
+		"monitor": "min val_loss",
+		"early_stop": 20,
+
+		"tensorboard": false,
+		"cross_validation": {
+			"do": true,
+			"folds": 15
+		}
+	}
+}
