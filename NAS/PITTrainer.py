@@ -287,7 +287,10 @@ class PITTrainer(BaseTrainer):
             self.train_metrics.update('loss', loss.item())
             self.train_metrics.update('reg_loss', regularization_loss)
             self.train_metrics.update('acc_loss', loss.item() - regularization_loss)
-            
+
+            for metr in self.metric_ftns:
+                self.train_metrics.update(metr.__name__, metr(output, target))
+
             if batch_idx % self.log_step == 0:
                 self.logger.debug('Train Epoch: {} {} Loss: {:.6f}'.format(epoch, self._progress(batch_idx), loss.item()))
 

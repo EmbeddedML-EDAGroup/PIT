@@ -18,7 +18,6 @@
 #*----------------------------------------------------------------------------*
 
 import torch
-from NAS.regularization.cost import Cost
 import numpy as np
 from math import ceil, log, floor
 from NAS.layer.STE import STEFunction
