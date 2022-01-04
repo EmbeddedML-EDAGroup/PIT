@@ -227,12 +227,12 @@ class PIT:
             retrain.model.load_state_dict(best_model['state_dict'])
             best_res = retrain.test()
             print("Best Model on Validation split test results: ", best_res)
-        
+        import pdb; pdb.set_trace() 
         try:
-            input_size = torch.rand(torch.tensor(self.nas_data_loader.dataset.X[0]).size())
+            input_data = torch.rand(torch.tensor(self.nas_data_loader.dataset.X[0]).size())
         except:
-            input_size = torch.rand(torch.tensor(self.nas_data_loader.dataset[0]['data'])[1].size())
-        self._save_summary(end_res, best_res, learned_model, input_size)
+            input_data = torch.rand(torch.tensor(self.nas_data_loader.dataset[0]['data'])[1].size())
+        self._save_summary(end_res, best_res, learned_model, input_data)
 
     def learned_model(self):
         raise NotImplementedError
@@ -254,7 +254,7 @@ class PIT:
         with open(path, 'w') as f:
             json.dump(self.learned_arch, f, indent=4)
 
-    def _save_summary(self, perf_measure_end, perf_measure_best, model, input_size):
+    def _save_summary(self, perf_measure_end, perf_measure_best, model, input_data):
         save_dir = self.config.save_dir
         save_path = save_dir / ('summary_'+self.config['name']+'.txt')
         f = open(save_path, 'a+')
@@ -266,9 +266,9 @@ class PIT:
         f.write('Regularizer Target: {} \n'.format(self.config['nas']['nas_config']['regularizer']))
         f.write('Network Size: {} \n'.format(sum(p.numel() for p in model.parameters())))
         try:
-            f.write('FLOPs: {} \n'.format(2 * (summary(model, input_size, verbose=0)).total_mult_adds))
+            f.write('FLOPs: {} \n'.format(2 * (summary(model, input_data=input_data, verbose=0)).total_mult_adds))
         except:
-            f.write('FLOPs: {} \n'.format(2 * (summary(model, input_size.unsqueeze(0), verbose=0)).total_mult_adds))
+            f.write('FLOPs: {} \n'.format(2 * (summary(model, input_data=input_data.unsqueeze(0), verbose=0)).total_mult_adds))
         
         f.write('Performance end of training: {} \n'.format(perf_measure_end))
         f.write('Performance best validation split: {} \n'.format(perf_measure_best))
