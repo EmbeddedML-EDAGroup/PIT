@@ -1,0 +1,7 @@
+*/__pycache__
+*.pyc
+.vscode/settings.json
+config/config_Dalia_tmp.json
+config/config_ECG5000_tmp.json
+config/config_GoogleSpeechCommands_tmp.json
+config/config_NinaProDB1_tmp.json
