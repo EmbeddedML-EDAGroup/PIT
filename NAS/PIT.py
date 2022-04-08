@@ -227,7 +227,6 @@ class PIT:
             retrain.model.load_state_dict(best_model['state_dict'])
             best_res = retrain.test()
             print("Best Model on Validation split test results: ", best_res)
-        import pdb; pdb.set_trace() 
         try:
             input_data = torch.rand(torch.tensor(self.nas_data_loader.dataset.X[0]).size())
         except:

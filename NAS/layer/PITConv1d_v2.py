@@ -69,6 +69,12 @@ class PITConv1d(Conv1d):
         self.mask_dil = self.mask_type.get('dilation', 'stochastic')
         self.mask_rf = self.mask_type.get('filters', 'stochastic')
         self.mask_ch = self.mask_type.get('channels', 'stochastic')
+
+        if self.mask_ch == 'fbnet':
+            self.n_mask = self.mask_type.get('n_mask', 'all')
+            self.fbnet_mask = self._init_fbnet_mask(out_channels, self.n_mask)
+            self.n_mask = self.n_mask if self.n_mask != 'all' else out_channels
+            self.effective_ch = None
         
         # If the granularity is not specified the value 1 is used.
         self.granularity = NAS_features.get('granularity', 1)
@@ -108,22 +114,34 @@ class PITConv1d(Conv1d):
                     ).fill_(init_val) 
                 
         # Channels
-        if self.mask_ch == 'binary' or self.mask_ch == 'linear':
+        if self.mask_ch == 'binary' or self.mask_ch == 'linear' or self.mask_ch == 'fbnet':
             init_val = 1.
         elif self.mask_ch == 'stochastic':
             init_val = 2.5
-        if self.is_residual:
+
+        if self.is_residual or self.mask_ch == 'fbnet':
             self.keep_alive_ch = 0
         else:
             self.keep_alive_ch = 1
-        self.alpha = Parameter(torch.empty(
-            out_channels - self.keep_alive_ch,
-            dtype = torch.float32
-            ).fill_(init_val), requires_grad=True)
-        self.bin_alpha = torch.empty(
+
+        if self.mask_ch != 'fbnet':
+            self.alpha = Parameter(torch.empty(
                 out_channels - self.keep_alive_ch,
                 dtype = torch.float32
-                ).fill_(init_val)
+                ).fill_(init_val), requires_grad=True)
+            self.bin_alpha = torch.empty(
+                    out_channels - self.keep_alive_ch,
+                    dtype = torch.float32
+                    ).fill_(init_val)
+        else:
+            self.alpha = Parameter(torch.empty(
+                self.n_mask,
+                dtype = torch.float32
+                ).fill_(init_val), requires_grad=True)
+            self.bin_alpha = torch.empty(
+                    self.n_mask,
+                    dtype = torch.float32
+                    ).fill_(init_val)
    
     def forward(self, x):
         if self.device is None:
@@ -188,10 +206,18 @@ class PITConv1d(Conv1d):
                 bin_alpha = torch.clamp(self.alpha, 0, 1)
                 if x.is_cuda:
                     bin_alpha = bin_alpha.cuda()
+            if self.mask_ch == 'fbnet':
+                # Compute gumbel-softmax weights
+                bin_alpha = F.gumbel_softmax(self.alpha, self.tau)
+                if x.is_cuda:
+                    bin_alpha = bin_alpha.cuda()
             self.bin_alpha = copy.deepcopy(bin_alpha.data)
 
         if (self.fc or self.stride > 1) and self.learn_ch:
-            pruned_weight = self._channel_mask(self.weight, bin_alpha)
+            if self.mask_ch == 'fbnet':
+                pruned_weight = self._channel_mask_fb(self.weight, bin_alpha)
+            else:
+                pruned_weight = self._channel_mask(self.weight, bin_alpha)
         elif (self.fc or self.stride > 1):
             pruned_weight = self.weight
         else:
@@ -211,8 +237,11 @@ class PITConv1d(Conv1d):
                         pruned_weight = self._filter_mask(self.weight, self.beta)
                     elif self.mask_op == 'sum':
                         pruned_weight = self._filter_mask_sum(self.weight, torch.abs(self.beta))
-            elif (not self.learn_dil) and (not self.learn_rf) and (self.learn_ch):
-                pruned_weight = self._channel_mask(self.weight, bin_alpha)
+            elif (not self.learn_dil) and (not self.learn_rf) and (self.learn_ch): # Ch-Only
+                if self.mask_ch == 'fbnet':
+                    pruned_weight = self._channel_mask_fb(self.weight, bin_alpha)
+                else:
+                    pruned_weight = self._channel_mask(self.weight, bin_alpha)
             elif (self.learn_dil) and (self.learn_rf) and (not self.learn_ch):
                 if not self.group_bin:
                     pruned_weight = self._filter_mask(
@@ -490,6 +519,24 @@ class PITConv1d(Conv1d):
 
         return self._gamma_sum_mask(dil_fact, it, line)
 
+    def _init_fbnet_mask(self, ch_out, n_mask):
+        if n_mask == 'all':
+            n_mask = ch_out
+        granularity = ch_out // n_mask
+        mask = []
+        for i in range(n_mask):
+            leading_1s = ch_out - granularity * i
+            trailing_0s = ch_out - leading_1s
+            ones = torch.ones(leading_1s, dtype=torch.float32, device=self.device)
+            zeros = torch.zeros(trailing_0s, dtype=torch.float32, device=self.device)
+            mask.append(torch.cat((ones, zeros), 0))
+        return torch.stack(mask).to(self.device)
+
+    def _fbnet_mask(self, x, tau):
+        gs = F.gumbel_softmax(x, tau, dim=0)
+        return gs
+
+
     def _filter_mask(self, weight, beta):
         kernel_size = weight.size()[-1]
 
@@ -589,7 +636,14 @@ class PITConv1d(Conv1d):
         else:
             return masked_channels.transpose(0, 2)
 
-
+    def _channel_mask_fb(self, weight, alpha):
+        ch_out = weight.size()[0]
+        # Multiply gumbel-softmax weight to fbnet masks and sum them
+        curr_mask = sum([self.fbnet_mask[i].to(self.device) * alpha[i] for i in range(self.n_mask)])
+        self.effective_ch = torch.sum(curr_mask) # Used to compute reg loss
+        # Multiply current mask to weight tensor
+        return weight * curr_mask.view(ch_out, 1, 1)
+        
     def _max_dil(self, kernel_size):
         """
         Compute the largest allowed dilation factor given the kernel_size

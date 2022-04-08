@@ -69,20 +69,30 @@ class Regularizer:
                 torch.abs(getattr(self.layer, 'bin_alpha'))
             )
         else:
-            ch_in = torch.sum(
-                    torch.abs(getattr(self.prev_layer, 'alpha'))
+            if self.mask_ch != 'fbnet':
+                ch_in = torch.sum(
+                        torch.abs(getattr(self.prev_layer, 'alpha'))
+                    )
+                ch_out = torch.sum(
+                    torch.abs(getattr(self.layer, 'alpha'))
                 )
-            ch_out = torch.sum(
-                torch.abs(getattr(self.layer, 'alpha'))
-            )
+            else:
+                ch_in = getattr(self.prev_layer, 'effective_ch')
+                ch_out = getattr(self.layer, 'effective_ch')
         
         if self.layer.prev_layer == 'Input':
             ch_in = self._ch_in
 
         if self.layer.fc: # or pointwise conv
-            return ch_in * ch_out
+            if self.metric == 'size':
+                return ch_in * ch_out
+            elif self.metric == 'flops':
+                return ch_in * ch_out * self.output_shape
         elif self.layer.stride > 1:
-            return ch_in * ch_out * self._rf
+            if self.metric == 'size':
+                return ch_in * ch_out * self._rf
+            elif self.metric == 'flops':
+                return ch_in * ch_out * self._rf * self.output_shape
         else:
             if ((self.reg_target is not None) and (self.reg_target != 'beta')) or (not self.learn_rf):
                 if self.mask_op == 'mul':

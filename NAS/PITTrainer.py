@@ -71,6 +71,10 @@ class PITTrainer(BaseTrainer):
         self.mask_dil = self.mask_type.get('dilation', 'binary')
         self.mask_rf = self.mask_type.get('filters', 'binary')
         self.mask_ch = self.mask_type.get('channels', 'binary')
+
+        # Define and initialize temperature
+        if self.mask_ch == 'fbnet':
+            self.temp = config['nas']['nas_config']['tau']
                 
         self.regularizer = self.config['nas']['nas_config']['regularizer']
         try:
@@ -78,6 +82,8 @@ class PITTrainer(BaseTrainer):
         except:
             input_sample = torch.rand(torch.tensor(self.train_data_loader.dataset[0]['data'])[1].size())
         self.output_shapes = self._eval_output_shape(input_sample)
+
+        self.PIT_layers = list(filter(lambda x: (isinstance(x, PITConv1d)), self.model.modules()))
 
         self.train_metrics = MetricTracker('loss', 'reg_loss', 'acc_loss',*[m.__name__ for m in self.metric_ftns], writer=self.writer)
         if self.do_validation:
@@ -115,7 +121,43 @@ class PITTrainer(BaseTrainer):
         epoch = 0
 
         for epoch in range(self.start_epoch, self.epochs+self.start_epoch):
-            result = self._train_epoch(epoch)
+            if self.mask_ch != 'fbnet':
+                # Normal Training
+                result = self._train_epoch(epoch, self.train_data_loader)
+            else:
+                # Split dataset in 80% and 20%
+                data = self.train_data_loader.dataset
+                len_data_nw = int(len(data) * 0.8) # 80%, normal-weights
+                len_data_np = len(data) - len_data_nw # 20%, nas-params
+                data_nw, data_np = torch.utils.data.random_split(data, [len_data_nw, len_data_np])
+                nw_loader = torch.utils.data.DataLoader(
+                    data_nw, batch_size=self.config['data_loader']['args']['batch_size'], 
+                    shuffle=True, num_workers=self.config['data_loader']['args']['num_workers'],
+                    pin_memory=True
+                    ) 
+                np_loader = torch.utils.data.DataLoader(
+                    data_np, batch_size=self.config['data_loader']['args']['batch_size'],
+                    shuffle=True, num_workers=self.config['data_loader']['args']['num_workers'],
+                    pin_memory=True
+                    )
+                # Freeze NAS parameters and train normal weights with 80%-split
+                self._freeze_nas_weights(self.model, unfreeze_ch=False)
+                result = self._train_epoch(epoch, nw_loader)
+                # Unfreeze NAS parameters
+                self._freeze_nas_weights(self.model, unfreeze_ch=True)
+                # Freeze normal weights and train NAS parameters with 20%-split
+                self._freeze_normal_weights(self.model, unfreeze=False)
+                result = self._train_epoch(epoch, np_loader)
+                # Unfreeze normal weights
+                self._freeze_normal_weights(self.model, unfreeze=True)
+            
+            ## Anneal Temperature ##
+            # Compute new Temp
+            if self.mask_ch == 'fbnet':
+                self.temp = self.temp * math.exp(-0.045)
+                # Update Temp in every PIT Layer
+                for layer in self.PIT_layers:
+                    layer.tau = self.temp
 
             # save logged informations into log dicts
             log = {'epoch' : epoch}
@@ -145,6 +187,8 @@ class PITTrainer(BaseTrainer):
                 best = True
             else:
                 not_improved_count += 1
+                self.logger.info("Validation performance didn\'t improve for {} epochs.".format(not_improved_count))
+                self.logger.info("Keep searching for {} epochs.".format(self.early_stop - not_improved_count))
 
             if not_improved_count > self.early_stop:
                 self.logger.info("Validation performance didn\'t improve for {} epochs." "Training Stops.".format(self.early_stop))
@@ -225,6 +269,9 @@ class PITTrainer(BaseTrainer):
                 if isinstance(child, PITConv1d) and child.track_arch:
                     if self.mask_ch == 'stochastic':
                         self.learned_arch_ch[name] = self._channel_number(child.bin_alpha)
+                    elif self.mask_ch == 'fbnet':
+                        self.learned_arch_ch[name] = self._channel_number_fb(child.fbnet_mask, 
+                            child.bin_alpha)
                     else:
                         self.learned_arch_ch[name] = self._channel_number(child.alpha, child.is_residual)
     
@@ -242,7 +289,7 @@ class PITTrainer(BaseTrainer):
             with open(path, 'w') as f:
                 json.dump(self.learned_arch_ch, f, indent=4)
 
-    def _train_epoch(self, epoch):
+    def _train_epoch(self, epoch, data_loader):
         """
         Training logic for an epoch
                    
@@ -252,7 +299,7 @@ class PITTrainer(BaseTrainer):
         self.model.train()
         self.train_metrics.reset()
         t0 = time.time() 
-        for batch_idx, batch in enumerate(self.train_data_loader):
+        for batch_idx, batch in enumerate(data_loader):
             data, target = batch['data'].to(self.device), batch['target'].to(self.device)
 
             self.optimizer.zero_grad()
@@ -417,6 +464,15 @@ class PITTrainer(BaseTrainer):
         
         return out_channels
 
+    def _channel_number_fb(self, mask, alpha):
+        with torch.no_grad():
+            # Compute mask-idx with highest associated probability
+            mask_idx = torch.argmax(alpha)
+            # Compute number of channels for chosen mask
+            out_channels = int(sum(mask[mask_idx]))
+        return out_channels
+
+
     def _update_strength_value(self, fraction, loss):
         return fraction * loss / self._eval_initial_reg_loss(self.model)
     
@@ -460,6 +516,23 @@ class PITTrainer(BaseTrainer):
                 self.model(input_sample.unsqueeze(0))
                 outputs.append(actual_shape)
         return outputs
+
+    def _freeze_nas_weights(self, model, unfreeze_dil=False, unfreeze_rf=False, unfreeze_ch=False):
+        for _, child in model.named_modules():
+            if isinstance(child, PITConv1d):
+                for name, param in child.named_parameters():
+                    if name != 'weight' and name != 'bias':
+                        if name == 'gamma':
+                            param.requires_grad = unfreeze_dil
+                        elif name == 'beta':
+                            param.requires_grad = unfreeze_rf
+                        elif name == 'alpha':
+                            param.requires_grad = unfreeze_ch
+
+    def _freeze_normal_weights(self, model, unfreeze=False):
+        for name, param in model.named_parameters():
+            if not 'gamma' in name and not 'beta' in name and not 'alpha' in name:
+                param.requires_grad = unfreeze
 
     def _strength_schedule(self, epoch, actual_loss, old_loss):
         init_strength = self.strength

@@ -311,12 +311,17 @@ class TempConvBlock(BaseModel):
             kernel_size = ((k_size-1)*dil+1) * e
             if kernel_size % 2 == 0:
                 kernel_size += 1
+            if not self.learn_dil and not self.learn_rf:
+                kernel_size = k_size
+                padding = pad
+            else:
+                padding = kernel_size // 2
             self.tcn0 = PITConv1d(
                     in_channels = ch_in,
                     out_channels = ch_out,
                     kernel_size = kernel_size,
-                    dilation = 1,
-                    padding = kernel_size//2,
+                    dilation = 1 if self.learn_dil else dil,
+                    padding = padding,
                     name = self.name,
                     prev_layer = self.prev_layer,
                     NAS_features = nas_config
