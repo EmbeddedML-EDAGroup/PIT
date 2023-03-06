@@ -1,3 +1,5 @@
+**NEW RELEASE: we released our new, engineered and user-friendly DNAS library named [PLiNIO](https://github.com/eml-eda/plinio) which includes PIT among the different implemented methods. We highly suggest to try this new release for your experiments!**
+
 Copyright (C) 2021 Politecnico di Torino, Italy. SPDX-License-Identifier: Apache-2.0. See LICENSE file for details.
 
 Authors: Matteo Risso, Alessio Burrello, Francesco Conti, Lorenzo Lamberti, Yukai Chen, Luca Benini, Enrico Macii, Massimo Poncino, Daniele Jahier Pagliari
